@@ -1,15 +1,22 @@
 import re
-from matplotlib.colors import BoundaryNorm, ListedColormap
-import numpy as np
-from itertools import combinations
-from sklearn.metrics import ndcg_score, jaccard_score, average_precision_score
-from typing import Callable, Dict, Tuple, Any
-import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
 import os
 import pickle
+from typing import Callable, Dict, Tuple, Any
 from collections import defaultdict
+from itertools import combinations
+
+
+import numpy as np
+import pandas as pd
+
+from sklearn.metrics import ndcg_score, average_precision_score
+
+
+import matplotlib.pyplot as plt
+from matplotlib.colors import BoundaryNorm, ListedColormap
+import matplotlib.colors as mc
+import colorsys
+import seaborn as sns
 
 
 def compute_pairwise_metric(
@@ -59,107 +66,46 @@ def compute_shap_similarity_pearson(
     results_dict: Dict[str, Dict[str, list]],
 ) -> Tuple[np.ndarray, list]:
     """Compute pairwise Pearson correlation similarity between SHAP values."""
+    matrix, model_names = compute_pairwise_metric(
+        results_dict, "shapvalues", pearson_corr_vectorized
+    )
+    return (matrix + 1) / 2, model_names
 
-    return compute_pairwise_metric(results_dict, "shapvalues", pearson_corr_vectorized)
+
+def symmetric_ndcg_metric(model_i_fold, model_j_fold) -> float:
+    """Compute symmetric NDCG between two arrays of magnitudes."""
+    if len(model_i_fold.shape) == 1:
+        model_i_fold = np.array([model_i_fold])
+    if len(model_j_fold.shape) == 1:
+        model_j_fold = np.array([model_j_fold])
+
+    score_ij = ndcg_score(np.abs(model_i_fold), np.abs(model_j_fold))
+    score_ji = ndcg_score(np.abs(model_j_fold), np.abs(model_i_fold))
+    return np.mean([score_ij, score_ji])  # type: ignore
 
 
 def compute_shap_ndcg_similarity(
     results_dict: Dict[str, Dict[str, list]],
 ) -> Tuple[np.ndarray, list]:
     """Compute pairwise NDCG similarity between SHAP value magnitudes."""
-
-    def ndcg_metric(model_i_fold, model_j_fold) -> float:
-        if len(model_i_fold.shape) == 1:
-            model_i_fold = np.array([model_i_fold])
-        if len(model_j_fold.shape) == 1:
-            model_j_fold = np.array([model_j_fold])
-
-        score_ij = ndcg_score(np.abs(model_i_fold), np.abs(model_j_fold))
-        score_ji = ndcg_score(np.abs(model_j_fold), np.abs(model_i_fold))
-        return np.mean([score_ij, score_ji])  # type: ignore
-
-    return compute_pairwise_metric(results_dict, "shapvalues", ndcg_metric)
+    return compute_pairwise_metric(results_dict, "shapvalues", symmetric_ndcg_metric)
 
 
 def compute_lime_similarity_pearson(
     results_dict: Dict[str, Dict[str, list]],
 ) -> Tuple[np.ndarray, list]:
     """Compute pairwise Pearson correlation similarity between LIME values."""
-
-    return compute_pairwise_metric(results_dict, "limevalues", pearson_corr_vectorized)
+    matrix, model_names = compute_pairwise_metric(
+        results_dict, "limevalues", pearson_corr_vectorized
+    )
+    return (matrix + 1) / 2, model_names
 
 
 def compute_lime_ndcg_similarity(
     results_dict: Dict[str, Dict[str, list]],
 ) -> Tuple[np.ndarray, list]:
     """Compute pairwise NDCG similarity between LIME value magnitudes."""
-
-    def ndcg_metric(model_i_fold, model_j_fold) -> float:
-        if len(model_i_fold.shape) == 1:
-            model_i_fold = np.array([model_i_fold])
-        if len(model_j_fold.shape) == 1:
-            model_j_fold = np.array([model_j_fold])
-
-        score_ij = ndcg_score(np.abs(model_i_fold), np.abs(model_j_fold))
-        score_ji = ndcg_score(np.abs(model_j_fold), np.abs(model_i_fold))
-        return np.mean([score_ij, score_ji])  # type: ignore
-
-    return compute_pairwise_metric(results_dict, "limevalues", ndcg_metric)
-
-
-def compute_pdp_similarity_pearson(
-    results_dict,
-):
-    """Compute pairwise Pearson correlation similarity between PDP curves."""
-
-    def pdp_corr(pdp_i, pdp_j) -> float:
-
-        corrs = []
-        for feat in pdp_i.keys():
-            y_i = np.array(pdp_i[feat]["average"]).flatten()
-            y_j = np.array(pdp_j[feat]["average"]).flatten()
-
-            std_i = np.std(y_i)
-            std_j = np.std(y_j)
-
-            if std_i < 1e-12 and std_j < 1e-12:
-                corrs.append(1.0)
-            elif std_i < 1e-12 or std_j < 1e-12:
-                corrs.append(0.0)
-            else:
-                corrs.append(np.corrcoef(y_i, y_j)[0, 1])
-
-        return np.nanmean(corrs)
-
-    return compute_pairwise_metric(results_dict, "pdpvalues", pdp_corr)
-
-
-def compute_score_correlations(
-    results_dict: Dict[str, Dict[str, list]],
-) -> Tuple[np.ndarray, list]:
-    """Compute Pearson correlation between models' anomaly scores."""
-
-    def score_corr(model_i_fold, model_j_fold) -> float:
-        return np.corrcoef(model_i_fold, model_j_fold)[0, 1]
-
-    return compute_pairwise_metric(results_dict, "scores", score_corr)
-
-
-def compute_pred_jaccard(
-    results_dict: Dict[str, Dict[str, list]],
-) -> Tuple[np.ndarray, list]:
-    """Compute pairwise Jaccard index between binary predictions."""
-
-    def jaccard_metric(model_i_fold, model_j_fold) -> float:
-        return jaccard_score(
-            model_i_fold,
-            model_j_fold,
-            zero_division=0,
-            average="binary",
-            pos_label=1,
-        )  # type: ignore
-
-    return compute_pairwise_metric(results_dict, "predictions", jaccard_metric)
+    return compute_pairwise_metric(results_dict, "limevalues", symmetric_ndcg_metric)
 
 
 def compute_aucpr(results_dict):
@@ -180,16 +126,6 @@ def compute_aucpr(results_dict):
         all_mccs.append(np.nanmean(np.array(mccs)))
 
     return all_mccs, model_names
-
-
-import numpy as np
-import pandas as pd
-import seaborn as sns
-import matplotlib.pyplot as plt
-from matplotlib.colors import ListedColormap, BoundaryNorm
-import matplotlib.colors as mc
-import colorsys
-from typing import Dict
 
 
 def adjust_hue(color, amount=0.08):

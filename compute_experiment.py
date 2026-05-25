@@ -137,7 +137,7 @@ def train_and_get_results(clf, X, random_state):
         "shapvalues": shap_values,
         "limevalues": lime_values,
         "pdp_values": pd_results,
-        "ale_values": ale_results,  # Nouvel ajout
+        "ale_values": ale_results,
         "times": execution_times,
     }
 
@@ -169,7 +169,6 @@ def compute_experiment(
 
         os.makedirs(f"{save_path}/{clf_name}", exist_ok=True)
 
-        # PyOD specific attributes setup
         if hasattr(clf, "n_features"):
             setattr(clf, "n_features", X.shape[1])
         setattr(clf, "random_state", seed)
@@ -177,10 +176,8 @@ def compute_experiment(
             setattr(clf, "verbose", 0)
 
         for i in range(n_fold):
-            # Check if file exists to resume if needed, or simply overwrite
             file_out = f"{save_path}/{clf_name}/{i}.pkl"
 
-            # Calcul complet
             results = train_and_get_results(clf, X, i)
 
             with open(file_out, "wb") as f:
